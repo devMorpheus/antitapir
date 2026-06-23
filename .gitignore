@@ -1,0 +1,13 @@
+__pycache__
+
+/key/config.json
+/key/config.bin
+/key/key.py
+/key/key.bin
+
+/src/key.py
+/src/sing-box.exe
+/src/config.json
+
+/out
+/dist

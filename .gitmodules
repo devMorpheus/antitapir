@@ -1,0 +1,3 @@
+[submodule "third-party/sing-box"]
+	path = third-party/sing-box
+	url = https://github.com/devMorpheus/sing-box

@@ -1,0 +1,19 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python Debugger: Antitapir",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "./src/antitapir.py",
+            "console": "integratedTerminal",
+            "args": "--game destiny2 --store steam",
+            "env": {
+                "ANTITAPIR_DEV": "1"
+            }
+        }
+    ]
+}
