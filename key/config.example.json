@@ -1,0 +1,84 @@
+// Anti-Tapir: sing-box config template for Tapir-Box v0.5 (sing-box 1.14.0-alpha.18, built with -tags with_utls).
+// Usage: copy to key/config.json, replace the "proxy" outbound with your own, then follow the README
+// (genkey.py -> genconfig.py -> copy key.py to src/ -> build_singbox.bat -> build_antitapir.bat).
+//
+// Context: the tunnel only exists during the login phase. antitapir.exe kills sing-box once the
+// "Verifying content" label disappears, and Tapir-Box exits by itself after 200 s. Gameplay traffic
+// therefore never goes through this config: routing everything to the proxy here costs no ping.
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+    // Test campaign only: write logs to a file next to sing-box.exe instead of the console.
+    // , "output": "sing-box.log"
+  },
+  "dns": {
+    "servers": [
+      // Resolver reached THROUGH the proxy: answers match the proxy exit location and avoid
+      // ISP-side DNS filtering. Used for every name except the bootstrap below.
+      { "type": "https", "tag": "dns-remote", "server": "1.1.1.1", "detour": "proxy" },
+      // System resolver of the physical adapter (sing-box skips its own TUN on Windows).
+      // Only used to resolve the proxy server hostname (route.default_domain_resolver).
+      { "type": "local", "tag": "dns-local" }
+    ],
+    "final": "dns-remote",
+    // The TUN below is IPv4-only: never hand out AAAA records, otherwise an app could open an
+    // IPv6 connection that bypasses the tunnel with the real address.
+    "strategy": "ipv4_only",
+    // Keep IP -> domain from our own answers: at "debug" level the log names the host behind an
+    // IP connection ("found reserve mapped domain"). At "info", the "dns: exchanged A" lines already
+    // show which name resolved to which IP.
+    "reverse_mapping": true
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      // Keep "antitapir-tun": antitapir.py removes the leftover Wintun adapter through a fixed
+      // GUID, and sing-tun derives that GUID from this name (md5("wintun" + name)).
+      "interface_name": "antitapir-tun",
+      "address": ["172.19.0.1/30"],
+      "auto_route": true,
+      // Windows: blocks port-53 DNS on the other interfaces, so every lookup reaches sing-box.
+      "strict_route": true,
+      // Tapir-Box is built without gVisor: "system" is the only stack available.
+      "stack": "system"
+    }
+  ],
+  "outbounds": [
+    // >>> Replace this block with your own outbound (for example exported from Throne). <<<
+    // Keep "tag": "proxy". VLESS/REALITY, Trojan, Shadowsocks and VMess work with this build;
+    // Hysteria2, TUIC and WireGuard need build tags that build_singbox.bat does not set.
+    {
+      "type": "vless",
+      "tag": "proxy",
+      "server": "proxy.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-0000-0000-000000000000",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.example.com",
+        "utls": { "enabled": true, "fingerprint": "chrome" },
+        "reality": { "enabled": true, "public_key": "REPLACE_WITH_SERVER_PUBLIC_KEY_43_CHARS_xx", "short_id": "" }
+      }
+    },
+    { "type": "direct", "tag": "direct" }
+  ],
+  "route": {
+    "rules": [
+      // 1. Detect the protocol of each new connection (DNS, TLS SNI, HTTP, QUIC).
+      { "action": "sniff" },
+      // 2. Answer real DNS queries ourselves, matched by content rather than by port 53.
+      { "protocol": "dns", "action": "hijack-dns" },
+      // 3. LAN, router and TUN addresses never leave through the proxy.
+      { "ip_is_private": true, "outbound": "direct" }
+    ],
+    // 4. Everything else goes through the proxy while the tunnel is up: no IP or domain list to
+    //    maintain, whichever cloud address Bungie or Steam hands out on a given launch.
+    "final": "proxy",
+    // sing-box's own sockets (proxy server, bootstrap DNS) use the physical interface: no loop.
+    "auto_detect_interface": true,
+    "default_domain_resolver": "dns-local"
+  }
+}

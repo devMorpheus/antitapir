@@ -4,6 +4,7 @@ import pywinctl
 import time
 import subprocess
 import os
+import winreg  # Steam path auto-detection (Windows only, like the rest of this launcher)
 
 import ctypes
 import ctypes.wintypes
@@ -52,6 +53,59 @@ def getRunnedProceesses():
     result = result.stdout.lower()
     return result
 
+STEAM_DEFAULT_EXE = "C:\\Program Files (x86)\\Steam\\steam.exe"
+resolvedSteamExe = None
+
+def readRegistryValue(root, subkey, name, flags=0):
+    try:
+        with winreg.OpenKey(root, subkey, 0, winreg.KEY_READ | flags) as handle:
+            value, _ = winreg.QueryValueEx(handle, name)
+    except OSError:
+        return None
+    return str(value) if value else None
+
+def detectSteamExe():
+    # Steam rewrites HKCU\Software\Valve\Steam on every start (SteamPath uses forward slashes).
+    # HKCU is the hive of the account that answered the UAC prompt, so HKLM InstallPath
+    # (written by the installer, 32-bit registry view) covers elevation with another account.
+    candidates = []
+    steamPath = readRegistryValue(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam", "SteamPath")
+    if steamPath:
+        candidates.append(os.path.join(steamPath, "steam.exe"))
+    candidates.append(readRegistryValue(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam", "SteamExe"))
+    installPath = readRegistryValue(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Valve\Steam", "InstallPath", winreg.KEY_WOW64_32KEY)
+    if installPath:
+        candidates.append(os.path.join(installPath, "steam.exe"))
+
+    for candidate in candidates:
+        if candidate and os.path.isfile(candidate):
+            return os.path.normpath(candidate)
+    return None
+
+def getSteamExe():
+    # settings.ini [Steam] Path keeps priority when it is filled in and points to an existing
+    # file. "auto", an empty value or a stale path falls back to the registry, instead of
+    # failing later with "CreateProcessWithTokenW failed: 2".
+    global resolvedSteamExe
+    if resolvedSteamExe:
+        return resolvedSteamExe
+
+    configured = config.get('Steam', 'Path', fallback='').strip().strip('"')
+    if configured and configured.lower() != 'auto':
+        if os.path.isfile(configured):
+            resolvedSteamExe = configured
+            return resolvedSteamExe
+        print(f"Steam не найден по пути из settings.ini: {configured}")
+
+    detected = detectSteamExe()
+    if detected:
+        print(f"Путь к Steam найден в реестре: {detected}")
+        resolvedSteamExe = detected
+    else:
+        print("Steam не найден в реестре, укажите [Steam] Path в settings.ini")
+        resolvedSteamExe = configured if configured and configured.lower() != 'auto' else STEAM_DEFAULT_EXE
+    return resolvedSteamExe
+
 def killProcesses(game: str, store: str):
     runnedProceesses = getRunnedProceesses()
 
@@ -77,7 +131,7 @@ def killProcesses(game: str, store: str):
         if int(config['Steam']['UseShutdown']) == 1:
             print('Steam UseShutdown=1')
 
-            runAsUser(config['Steam']['Path'], "-shutdown")
+            runAsUser(getSteamExe(), "-shutdown")
 
             isDoneCount = 0
             
@@ -506,10 +560,10 @@ def main(game: str, store: str, language: str, exitdelay: float, threads: int, c
     if store == 'steam':
         if game == 'destiny2':    
             print("Запуск Steam и Destiny 2")
-            runAsUser(config['Steam']['Path'], "-applaunch 1085660")
+            runAsUser(getSteamExe(), "-applaunch 1085660")
         elif game == 'marathon':
             print("Запуск Steam и Marathon")
-            runAsUser(config['Steam']['Path'], "-applaunch 3065800")
+            runAsUser(getSteamExe(), "-applaunch 3065800")
     elif store == 'epic':
         if game == 'destiny2':    
             print("Запуск Epic")
